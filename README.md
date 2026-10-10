@@ -73,7 +73,8 @@ On the first run, `run` does the following:
 3. **Designs** a voice per character from its description with Qwen3-TTS VoiceDesign, saving the clip to `voices/designed/`.
 4. Speaks every line by cloning those clips with Qwen3-TTS Base, then masters the result.
 
-The model weights download from Hugging Face on first use.
+The model weights download from Hugging Face on first use. Speed depends on the GPU and the engine, so start
+with `--preview`. `abcraft bench tts -c 3` then reports the real-time factor on your machine.
 
 ### 5. Make it sound right
 
@@ -82,7 +83,7 @@ The model weights download from Hugging Face on first use.
 | who says a line, its emotion/intensity | `scripts/ch003.json` (`speaker`, `emotion`, `intensity`, `direction`) | re-run `run` |
 | a character's voice | `cast.yaml`: drop your clip at `voices/<id>.wav` (+ `voices/<id>.txt` transcript), set `preset: Aiden`, or rewrite `design:` and run `abcraft voices design --only <id> --force` | re-run `run` |
 | how the whole cast sounds | `abcraft voices audition` (one line per voice into `output/auditions/`) | — |
-| audio-drama feel | `--mode drama` drops bare "she said" tags between lines | `--reanalyze` |
+| audio-drama feel | `--mode drama` drops bare "she said" tags between lines (scripts keep every word) | re-run `run` |
 | catch mumbled or wrong takes | `uv sync --extra qwen --extra qa`, then `--asr` (Whisper checks each clip, retakes failures) | — |
 | pauses, loudness, narrator | `project.yaml` (`pacing`, `mastering`, `casting.narrator`) | re-run |
 
@@ -96,7 +97,8 @@ The book's text is split deterministically into narration and quoted lines. It h
 ‘British’, «guillemet», „German“ and em-dash dialogue, plus quotes that span paragraphs. The LLM never rewrites text:
 it sees each quote as `<q id="12">…</q>` in context and returns labels per id. These are checked against an
 enum of known character ids, so it can't invent speakers. Anything it skips falls back to rule-based attribution:
-speech tags, action beats, A/B alternation. The character map grows passage by passage with stable ids, and only
+speech tags, action beats, pronouns and "his wife"-style role nouns, and who is on stage to answer an untagged reply.
+The character map grows passage by passage with stable ids, and only
 exact name/alias matches merge (so "Mr. Bennet" never swallows "Mrs. Bennet"). The rules alone work with
 `--llm none`.
 
