@@ -41,6 +41,11 @@ def atomic_write_text(path: Path, text: str) -> None:
         raise
 
 
+def primary_language(code: str | None) -> str:
+    """ "en-GB" / "pt_BR" -> "en" / "pt": engines, number spelling and ASR all want the bare language."""
+    return (code or "").strip().lower().replace("_", "-").split("-")[0]
+
+
 def write_json(path: Path, data: Any) -> None:
     atomic_write_text(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
@@ -61,7 +66,7 @@ class Project:
 
     @property
     def language(self) -> str:
-        return self.config.language or "en"
+        return primary_language(self.config.language) or "en"
 
     # ----------------------------------------------------------------- paths
 

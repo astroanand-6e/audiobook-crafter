@@ -94,8 +94,21 @@ def _numbers_en(text: str) -> str:
     return re.sub(r"\b\d+\b", lambda m: number_words(int(m[0])), text)
 
 
+# Thousands separators by language ("1.500" in German, "5 000" in French, "1,00,000" in Hindi).
+_DOT_GROUPS = {"de", "es", "it", "pt", "nl", "da", "tr", "id", "el", "ro", "hr", "sl", "sr", "is", "vi"}
+_SPACE_GROUPS = {"fr", "ru", "pl", "sv", "no", "nb", "fi", "cs", "sk", "uk", "bg", "hu", "et", "lv", "lt"}
+
+
 def _numbers_other(text: str, language: str) -> str:
-    return re.sub(r"\b\d+\b", lambda m: number_words(int(m[0]), language), text)
+    if language in _DOT_GROUPS:
+        grouped = r"\b\d{1,3}(?:\.\d{3})+\b"
+    elif language in _SPACE_GROUPS:
+        grouped = r"\b\d{1,3}(?:[ \u00a0\u202f]\d{3})+\b"
+    else:
+        grouped = r"\b\d{1,3}(?:,\d{2,3})+\b"
+    text = re.sub(grouped, lambda m: number_words(int(re.sub(r"\D", "", m[0])), language), text)
+    # Plain integers only: decimals ("3,5", "2.75") are left for the TTS model to read.
+    return re.sub(r"(?<![\d.,])\d+(?![.,]?\d)", lambda m: number_words(int(m[0]), language), text)
 
 
 def _calm_caps(text: str) -> str:

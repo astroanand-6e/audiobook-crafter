@@ -51,7 +51,7 @@ def join_lines(lines: list[str]) -> str:
             continue
         if not out:
             out = line
-        elif re.search(r"[A-Za-zÀ-ÿ]-$", out) and line[:1].islower():
+        elif re.search(r"[A-Za-zÀ-ÿ][-\u2010\u2011\u00ad]$", out) and line[:1].islower():
             out = out[:-1] + line  # "extraordi-" + "nary"
         else:
             out = f"{out} {line}"
@@ -112,7 +112,10 @@ def classify_chapters(chapters: list[Chapter]) -> list[Chapter]:
         merged.append(chapter)
 
     def is_content(i: int, pattern: re.Pattern[str]) -> bool:
-        return not pattern.match(merged[i].title) and merged[i].word_count >= 150
+        # A titled chapter ("Chapter One", "Prologue") counts at any length; anything else needs real prose.
+        chapter = merged[i]
+        substantial = looks_like_chapter_heading(chapter.title) or chapter.word_count >= 150
+        return chapter.kind == "chapter" and not pattern.match(chapter.title) and substantial
 
     first = next((i for i in range(len(merged)) if is_content(i, _FRONT_MATTER)), 0)
     last = max((i for i in range(len(merged)) if is_content(i, _BACK_MATTER)), default=len(merged) - 1)

@@ -102,7 +102,9 @@ def design_voices(
         if on_progress:
             on_progress(n, len(todo), voice_id)
         text = sample_text(project, book, voice_id)
-        seed = project.config.tts.seed + zlib.crc32(voice_id.encode()) % 10_000
+        seed = profile.seed
+        if seed is None:
+            seed = project.config.tts.seed + zlib.crc32(voice_id.encode()) % 10_000
         audio, sr = engine.design(profile.design or "", text, language, seed)
         audio = clean_clip(audio, sr)
         if len(audio) < 5 * sr:  # some engines need 5 s+ of reference (Chatterbox Turbo)

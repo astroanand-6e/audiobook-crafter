@@ -71,6 +71,9 @@ def _split_chapters(items: list[Block]) -> list[Chapter]:
         current.append(block)
     if current:
         chapters.append(_chapter(current, len(chapters) + 1))
+    if len(chapters) > 1 and not any(b.kind == "heading" for b in chapters[0].blocks):
+        chapters[0].kind = "front_matter"  # text before the first heading: title page, preface, licence
+        chapters[0].title = "Front matter"
     return chapters
 
 

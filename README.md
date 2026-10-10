@@ -55,7 +55,8 @@ uv run abcraft chapters "My Book.pdf"
 ```
 
 The command prints every chapter it found, with its index, title, word count, pages and opening words.
-Front matter is chapter 0. If detection is off for your PDF, give the pages directly with `--pages 41-58`.
+Front matter is chapter 0. If detection got a chapter wrong, set its pages by hand:
+`run "My Book.pdf" --chapter 3 --pages 41-58`. Only that chapter changes, and the override is remembered.
 
 ### 4. Convert it
 
@@ -81,10 +82,10 @@ with `--preview`. `abcraft bench tts -c 3` then reports the real-time factor on 
 | To change… | edit | then |
 |---|---|---|
 | who says a line, its emotion/intensity | `scripts/ch003.json` (`speaker`, `emotion`, `intensity`, `direction`) | re-run `run` |
-| a character's voice | `cast.yaml`: drop your clip at `voices/<id>.wav` (+ `voices/<id>.txt` transcript), set `preset: Aiden`, or rewrite `design:` and run `abcraft voices design --only <id> --force` | re-run `run` |
+| a character's voice | drop your clip at `voices/<id>.wav` (+ `voices/<id>.txt` transcript; it replaces an automatically chosen voice), or in `cast.yaml` set `preset: Aiden` or rewrite `design:` and run `abcraft voices design --only <id> --force` | re-run `run` |
 | how the whole cast sounds | `abcraft voices audition` (one line per voice into `output/auditions/`) | — |
 | audio-drama feel | `--mode drama` drops bare "she said" tags between lines (scripts keep every word) | re-run `run` |
-| catch mumbled or wrong takes | `uv sync --extra qwen --extra qa`, then `--asr` (Whisper checks each clip, retakes failures) | — |
+| catch mumbled or wrong takes | `uv sync --extra qwen --extra qa`, then `--asr`: Whisper checks each clip, including ones already made. `--retake` re-generates clips that still fail | — |
 | pauses, loudness, narrator | `project.yaml` (`pacing`, `mastering`, `casting.narrator`) | re-run |
 
 Voices are **never re-cast** once assigned, so a character sounds the same in chapter 30 as in chapter 1. The

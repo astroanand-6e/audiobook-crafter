@@ -78,6 +78,8 @@ _TOC_LINE = re.compile(r"^\D.{1,90}?(?:\s*\.{2,}\s*|\s+)\d{1,4}$")
 _BOLD_FONT = re.compile(r"bold|black|heavy|semibold|demi", re.IGNORECASE)
 _FOOTNOTE_MARK = re.compile(r"^\s*[\d*†‡§¶]+\s*$")
 _SENTENCE_END = (".", "!", "?", "”", '"', "’", "'", "…", ":", ")", "।", "。", "！", "？")
+_LINE_END_HYPHEN = re.compile(r"[\u00ad\u2010\u2011]$")
+_NOTE_START = re.compile(r"^\s*(?:\d{1,3}[.)]?|[*†‡§¶])\s*\S")
 
 
 def _page_lines(page: pymupdf.Page, index: int) -> list[Line]:
@@ -105,7 +107,9 @@ def _page_lines(page: pymupdf.Page, index: int) -> list[Line]:
                     total_chars += n
                     if span.get("flags", 0) & 16 or _BOLD_FONT.search(span.get("font", "")):
                         bold_chars += n
-            text = clean_text("".join(parts))
+            # Soft (U+00AD) and Unicode (U+2010/2011) hyphens at a line end become "-" before cleaning
+            # removes them, so join_lines() can re-join the word.
+            text = clean_text(_LINE_END_HYPHEN.sub("-", "".join(parts).rstrip()))
             if not text or not total_chars:
                 continue
             x0, y0, x1, y1 = raw["bbox"]
@@ -184,11 +188,18 @@ _WORDS_AFTER_A_OR_I = {
 
 
 def _clean_page(lines: list[Line], body: float) -> list[Line]:
-    """Drop footnotes and re-attach drop caps ("T" + "he night was dark")."""
+    """Drop footnotes and re-attach drop caps ("T" + "he night was dark").
+
+    A footnote is small type in the lower part of the page that starts with a note marker ("1", "*", "†"),
+    plus the small lines that follow it. Other small type (copyright lines, epigraphs, letters) is kept."""
     out: list[Line] = []
+    in_notes = False
     for i, line in enumerate(lines):
-        if line.size < 0.8 * body and line.y0 > 0.65 * line.page_height:
-            continue  # footnote zone
+        small_and_low = line.size < 0.8 * body and line.y0 > 0.65 * line.page_height
+        if small_and_low and (in_notes or _NOTE_START.match(line.text)):
+            in_notes = True
+            continue
+        in_notes = in_notes and small_and_low
         if len(line.text) == 1 and line.text.isalpha() and line.size >= 1.6 * body:
             following = next(
                 (
@@ -305,19 +316,39 @@ def _toc_starts(toc: list[list], paras: list[Para]) -> list[tuple[int, str]]:
         candidates = by_page.get(page_index, [])
         if not candidates:
             continue
-        want = _norm(title)
-        match = next(
-            (
-                i
-                for i in candidates[:6]
-                if _norm(paras[i].text)
-                and (want.startswith(_norm(paras[i].text)[:25]) or _norm(paras[i].text).startswith(want[:25]))
-            ),
-            candidates[0],
-        )
-        if not starts or match > starts[-1][0]:
+        match = _locate_title(title, [i for i in candidates if not starts or i > starts[-1][0]], paras)
+        if match is not None and (not starts or match > starts[-1][0]):
             starts.append((match, title))
     return starts if len(starts) >= 2 else []
+
+
+def _locate_title(title: str, candidates: list[int], paras: list[Para]) -> int | None:
+    """The paragraph where an outline entry's chapter begins: chapters often start mid-page."""
+    if not candidates:
+        return None
+    want = _norm(title)
+    want_words = set(want.split())
+    best, best_score = None, 0.0
+    for i in candidates:
+        have = _norm(paras[i].text)
+        if not have:
+            continue
+        if have == want:
+            score = 3.0
+        elif len(have) >= 3 and (want.startswith(have) or have.startswith(want)):
+            score = 2.0
+        else:
+            words = set(have.split())
+            overlap = len(words & want_words) / max(1, len(words | want_words))
+            score = overlap if overlap >= 0.6 and len(have) <= 2 * len(want) + 10 else 0.0
+        if paras[i].heading:
+            score += 0.5
+        if score > best_score:
+            best, best_score = i, score
+    if best is not None and best_score >= 1.0:
+        return best
+    headings = [i for i in candidates if paras[i].heading and looks_like_chapter_heading(paras[i].text)]
+    return headings[0] if headings else candidates[0]
 
 
 def _heading_starts(paras: list[Para], body: float) -> list[tuple[int, str]]:
@@ -410,7 +441,9 @@ def load_pdf(path: Path, page_range: tuple[int, int] | None = None) -> Book:
         else:
             chapters = []
             if starts[0][0] > 0:
-                chapters.append(_chapter_from(paras[: starts[0][0]], "Opening", 0))
+                opening = _chapter_from(paras[: starts[0][0]], "Front matter", 0)
+                opening.kind = "front_matter"  # title page, copyright, dedication...: never chapter 1
+                chapters.append(opening)
             bounds = [s for s, _ in starts] + [len(paras)]
             for n, (start, chapter_title) in enumerate(starts):
                 chapters.append(_chapter_from(paras[start : bounds[n + 1]], chapter_title, n + 1))

@@ -272,3 +272,23 @@ def test_voxcpm_style_prefix_on_cloned_voice(monkeypatch: pytest.MonkeyPatch, tm
     engine.design("A warm elderly woman.", "Hello there.", "en", 2)
     assert model.calls[-1][:2] == ("(A warm elderly woman.)Hello there.", None)
     assert engine.supports("hi")
+
+
+def test_chatterbox_english_never_zeroes_cfg_and_old_versions_ignore_t3_model(
+    chatterbox_modules, tmp_path: Path
+) -> None:
+    english = create_local_engine("chatterbox", {}, "cpu")
+    english.load()
+    voice = Voice(
+        id="a",
+        reference=tmp_path / "a.wav",
+        fingerprint="a",
+        params={"cfg_weight": 0.0, "cross_language": True},
+    )
+    english.synthesize(Line(text="Hello."), voice, 1)
+    assert chatterbox_modules["en"].calls[-1][4] > 0  # 0 would break the English model's CFG batch
+
+    multilingual = create_local_engine("chatterbox-multilingual", {"t3_model": "v3"}, "cpu")
+    multilingual.load()  # PyPI 0.1.7's from_pretrained(device) has no t3_model: warn, don't crash
+    multilingual.synthesize(Line(text="Bonjour.", language="fr"), voice, 1)
+    assert chatterbox_modules["mtl"].calls[-1][4] == 0.0  # cross-language clip: cfg off for multilingual

@@ -24,7 +24,7 @@ from .casting.design import design_voices
 from .casting.voices import resolve_voice
 from .ingest import load_document
 from .llm import parse_spec
-from .project import Project
+from .project import Project, primary_language
 from .tts import ENGINES, EnginePool, engine_available
 from .tts.base import Line
 
@@ -129,7 +129,7 @@ def apply_options(
             raise typer.BadParameter(f"unknown engine '{engine}'; see `abcraft engines`")
         config.tts.engine = engine
     if language:
-        config.language = language.lower()
+        config.language = primary_language(language)
     if mode:
         if mode not in ("audiobook", "drama"):
             raise typer.BadParameter("--mode is audiobook or drama")
@@ -206,7 +206,7 @@ def run(
         str | None, typer.Option(help="audiobook (every word) or drama (drops 'he said' tags)")
     ] = None,
     pages: Annotated[
-        str | None, typer.Option(help="PDF pages FIRST-LAST as the chapter, if detection fails")
+        str | None, typer.Option(help="PDF pages FIRST-LAST for this --chapter, if detection got it wrong")
     ] = None,
     preview: Annotated[int | None, typer.Option(help="Only the first N lines: a quick listen")] = None,
     reanalyze: Annotated[bool, typer.Option(help="Redo speaker attribution even if a script exists")] = False,
@@ -214,6 +214,9 @@ def run(
         bool, typer.Option(help="Build the character map from the whole book first")
     ] = False,
     asr: Annotated[bool | None, typer.Option("--asr/--no-asr", help="Check every clip with Whisper")] = None,
+    retake: Annotated[
+        bool, typer.Option(help="Re-generate cached clips that failed QA, with new takes")
+    ] = False,
     device: Annotated[str | None, typer.Option(help="cuda, cpu, mps or auto")] = None,
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
 ) -> None:
@@ -221,12 +224,15 @@ def run(
     setup_logging(verbose)
     page_range = parse_pages(pages)
     selected = parse_chapters(chapter) or ([1] if page_range else [])
+    if page_range and len(selected) != 1:
+        raise typer.BadParameter("--pages sets the pages of one chapter: pass exactly one --chapter")
     project = open_project(project_dir, book)
     if not selected:
         console.print("Pick chapters with [bold]--chapter[/]. Here is what the book contains:")
         chapters(book, pages)
         raise typer.Exit(2)
     apply_options(project, llm=llm, engine=engine, language=language, mode=mode, asr=asr, device=device)
+    project.config.qa.retake_failed = retake  # per run, never saved
     console.print(f"[bold]Project[/] {project.root}")
     try:
         with RichReporter() as reporter:

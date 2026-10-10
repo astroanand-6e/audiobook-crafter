@@ -7,6 +7,8 @@ reused for all of its lines."""
 from __future__ import annotations
 
 import importlib.util
+import inspect
+import logging
 from importlib import metadata
 from typing import Any
 
@@ -14,6 +16,8 @@ import numpy as np
 
 from .base import Line, TTSEngine, TTSError, Voice, resolve_device, seed_everything
 from .emotion import chatterbox_controls, turbo_prefix
+
+log = logging.getLogger(__name__)
 
 MULTILINGUAL = frozenset("ar da de el en es fi fr he hi it ja ko ms nl no pl pt ru sv sw tr zh".split())
 
@@ -27,6 +31,7 @@ class ChatterboxEngine(TTSEngine):
         self.model: Any = None
         self._default_conds: Any = None
         self._conds: dict[str, Any] = {}
+        self._warned: set[str] = set()
 
     @property
     def version(self) -> str:
@@ -47,7 +52,16 @@ class ChatterboxEngine(TTSEngine):
         if self.variant == "multilingual":
             from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
-            extra = {"t3_model": self.options["t3_model"]} if self.options.get("t3_model") else {}
+            extra = {}
+            if self.options.get("t3_model"):
+                # Multilingual V3 checkpoints need a newer chatterbox than PyPI 0.1.7 (install it from git).
+                if "t3_model" in inspect.signature(ChatterboxMultilingualTTS.from_pretrained).parameters:
+                    extra["t3_model"] = self.options["t3_model"]
+                else:
+                    log.warning(
+                        "This chatterbox-tts has no t3_model option; ignoring t3_model=%s",
+                        self.options["t3_model"],
+                    )
             self.model = ChatterboxMultilingualTTS.from_pretrained(device=device, **extra)
         elif self.variant == "turbo":
             from chatterbox.tts_turbo import ChatterboxTurboTTS
@@ -63,6 +77,12 @@ class ChatterboxEngine(TTSEngine):
         if voice.reference is None:
             if self._default_conds is None:
                 raise TTSError(f"{self.name} needs a reference clip for voice '{voice.id}' (5 s or longer).")
+            if voice.id not in self._warned:
+                log.warning(
+                    "Voice '%s' has no clip: using Chatterbox's built-in voice (shared by every such voice)",
+                    voice.id,
+                )
+                self._warned.add(voice.id)
             self.model.conds = self._default_conds
             return
         conds = self._conds.get(voice.fingerprint)
@@ -99,8 +119,10 @@ class ChatterboxEngine(TTSEngine):
                 float(params.get("exaggeration", 0.5)),
                 float(params.get("cfg_weight", 0.5)),
             )
-            if params.get("cross_language"):
+            if params.get("cross_language") and self.variant == "multilingual":
                 cfg_weight = 0.0  # reference clip in another language: stops its accent bleeding through
+            if self.variant == "english":
+                cfg_weight = max(cfg_weight, 0.05)  # the English model's CFG batch breaks at exactly 0
             controls = {"exaggeration": exaggeration, "cfg_weight": cfg_weight, **sampling}
             if self.variant == "multilingual":
                 wav = self.model.generate(line.text, language_id=line.language, **controls)

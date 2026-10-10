@@ -135,3 +135,54 @@ def test_heading_helpers() -> None:
     assert display_title("CHAPTER ONE") == "Chapter One"
     assert display_title("CHAPTER IV") == "Chapter IV"
     assert join_lines(["an extraordi-", "nary day"]) == "an extraordinary day"
+
+
+def test_pdf_mid_page_chapters_long_front_matter_and_footnotes(tmp_path: Path) -> None:
+    import pymupdf
+    from conftest import _text
+
+    doc = pymupdf.open()
+    front = doc.new_page()
+    _text(front, (72, 90), "The Tricky Book", 24)
+    y = 140
+    for _ in range(14):  # ~250 words of title-page / copyright prose: must not become "chapter 1"
+        _text(front, (72, y), "All rights reserved. No part of this book may be reproduced in any form", 10)
+        y += 14
+    _text(front, (72, 760), "Printed in the United Kingdom by Example Press.", 8)  # small print, not a note
+    page = doc.new_page()
+    _text(page, (230, 80), "CHAPTER ONE", 20)
+    y = 120
+    for n in range(9):
+        _text(page, (90, y), f"Paragraph {n} of the first chapter, which goes on for a while here.", 11)
+        y += 18
+    _text(page, (230, y + 30), "CHAPTER TWO", 20)  # starts mid-page, after nine paragraphs
+    y += 70
+    for n in range(4):
+        _text(page, (90, y), f"Second chapter paragraph {n}, with more words to read aloud.", 11)
+        y += 18
+    _text(page, (72, 740), "1 A footnote that should not be read aloud.", 8)
+    for n in range(3):  # enough body text for chapter two to count as a chapter
+        extra = doc.new_page()
+        for k in range(12):
+            _text(
+                extra,
+                (90, 80 + 18 * k),
+                f"More of chapter two, page {n}, line {k}, and the story continues.",
+                11,
+            )
+    doc.set_toc([[1, "Chapter One", 2], [1, "Chapter Two", 2]])
+    path = tmp_path / "tricky.pdf"
+    doc.save(path)
+
+    book = load_document(path)
+    assert [(c.index, c.kind) for c in book.chapters] == [(0, "front_matter"), (1, "chapter"), (2, "chapter")]
+    one, two = book.chapter(1), book.chapter(2)
+    assert one.blocks[0].text == "CHAPTER ONE" and "CHAPTER TWO" not in " ".join(b.text for b in one.blocks)
+    assert two.blocks[0].text == "CHAPTER TWO"
+    assert all("footnote" not in b.text for c in book.chapters for b in c.blocks)
+    assert "Printed in the United Kingdom" in " ".join(b.text for b in book.chapters[0].blocks)
+
+
+def test_join_lines_handles_unicode_hyphens() -> None:
+    assert join_lines(["an extraordi‐", "nary day"]) == "an extraordinary day"
+    assert join_lines(["an extraordi­", "nary day"]) == "an extraordinary day"

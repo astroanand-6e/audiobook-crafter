@@ -68,7 +68,7 @@ class OpenAICompatLLM(LLM):
         return False
 
     def chat(self, system: str, messages: list[dict[str, str]], schema: dict[str, Any] | None) -> str:
-        for _ in range(4):
+        for _ in range(6):  # up to four downgrades, then the request that works
             try:
                 response = self.client.post(
                     f"{self.base_url}/chat/completions", json=self._payload(system, messages, schema)

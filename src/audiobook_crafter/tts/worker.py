@@ -69,12 +69,22 @@ class WorkerEngine(TTSEngine):
     def _call(self, message: dict[str, Any]) -> dict[str, Any]:
         if self.proc is None or self.proc.stdin is None or self.proc.stdout is None:
             raise TTSError(f"The {self.name} worker isn't running")
-        self.proc.stdin.write(json.dumps(message) + "\n")
-        self.proc.stdin.flush()
-        reply_line = self.proc.stdout.readline()
+        try:
+            self.proc.stdin.write(json.dumps(message) + "\n")
+            self.proc.stdin.flush()
+            reply_line = self.proc.stdout.readline()
+        except (BrokenPipeError, OSError) as err:
+            raise TTSError(
+                f"The {self.name} worker stopped (code {self.proc.poll()}); its log is above"
+            ) from err
         if not reply_line:
             raise TTSError(f"The {self.name} worker exited (code {self.proc.poll()}); its log is above")
-        reply = json.loads(reply_line)
+        try:
+            reply = json.loads(reply_line)
+        except json.JSONDecodeError as err:
+            raise TTSError(
+                f"The {self.name} worker wrote something unexpected: {reply_line[:200]!r}"
+            ) from err
         if not reply.get("ok"):
             raise TTSError(f"{self.name}: {reply.get('error')}")
         return reply

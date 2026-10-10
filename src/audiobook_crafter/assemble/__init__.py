@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import statistics
 from collections import defaultdict
@@ -16,7 +17,7 @@ from ..audio.dsp import active_rms_db, room_tone
 from ..config import PacingConfig
 from ..ingest import extract_cover
 from ..models import Book
-from ..project import Project
+from ..project import Project, write_json
 from ..synth.runner import Clip, load_manifest
 
 _SENTENCE_END = (".", "!", "?", "…", "”", '"', "’", "।", "。", "！", "？")
@@ -89,15 +90,22 @@ def _read(project: Project, clip: Clip, sample_rate: int) -> np.ndarray:
 def speaker_gains(project: Project, clips: list[Clip]) -> dict[str, float]:
     """Bring every voice to the same average level, keeping each voice's own whispers and shouts."""
     levels: dict[str, list[float]] = defaultdict(list)
+    peaks: dict[str, float] = defaultdict(float)
     for clip in clips:
         if clip.path:
             audio, sr = sf.read(str(project.resolve(clip.path)), dtype="float32")
             levels[clip.voice].append(active_rms_db(audio, sr))
+            peaks[clip.voice] = max(peaks[clip.voice], float(np.max(np.abs(audio))) if audio.size else 0.0)
     medians = {voice: statistics.median(values) for voice, values in levels.items() if values}
     if not medians:
         return {}
     target = statistics.median(medians.values())
-    return {voice: 10 ** (max(-12.0, min(12.0, target - level)) / 20) for voice, level in medians.items()}
+    gains = {}
+    for voice, level in medians.items():
+        gain = 10 ** (max(-12.0, min(12.0, target - level)) / 20)
+        # Never push a voice's loudest moment (a shout) past full scale; mastering limits the rest.
+        gains[voice] = min(gain, 0.98 / peaks[voice]) if peaks[voice] > 0 else gain
+    return gains
 
 
 def render_voice_track(project: Project, clips: list[Clip], out: Path) -> float:
@@ -116,7 +124,7 @@ def render_voice_track(project: Project, clips: list[Clip], out: Path) -> float:
 
     out.parent.mkdir(parents=True, exist_ok=True)
     written = 0
-    with sf.SoundFile(str(out), "w", samplerate=sample_rate, channels=1, subtype="PCM_24") as track:
+    with sf.SoundFile(str(out), "w", samplerate=sample_rate, channels=1, subtype="FLOAT") as track:
 
         def write(audio: np.ndarray) -> None:
             nonlocal written
@@ -125,7 +133,7 @@ def render_voice_track(project: Project, clips: list[Clip], out: Path) -> float:
 
         write(silence(config.pacing.lead_in_ms))
         for clip, gap in timeline(clips, config.pacing):
-            write(np.clip(_read(project, clip, sample_rate) * gains.get(clip.voice, 1.0), -1.0, 1.0))
+            write(_read(project, clip, sample_rate) * gains.get(clip.voice, 1.0))
             write(silence(gap))
         write(silence(config.pacing.tail_ms))
     return written / sample_rate
@@ -142,7 +150,7 @@ def chapter_title(book: Book, index: int) -> str:
 
 def assemble_chapter(project: Project, book: Book, index: int, preview: bool = False) -> ChapterAudio:
     """Master one chapter. A preview gets its own file names so it never ends up in the M4B."""
-    clips = load_manifest(project, index)
+    clips = load_manifest(project, index, preview)
     kind = "preview" if preview else "master"
     voice = project.render_dir / f"ch{index:03d}.voice.wav"
     seconds = render_voice_track(project, clips, voice)
@@ -154,18 +162,23 @@ def assemble_chapter(project: Project, book: Book, index: int, preview: bool = F
     tags = {"title": title, "album": book.title, "artist": book.author, "album_artist": book.author,
             "track": str(index), "genre": "Audiobook"}  # fmt: skip
     ffmpeg.encode_mp3(master, mp3, project.config.mastering, tags)
+    if not preview:
+        write_json(master.with_suffix(".json"), {"source": book.chapter(index).fingerprint(), "title": title})
     return ChapterAudio(index=index, title=title, master=master, mp3=mp3, seconds=seconds)
 
 
 def build_audiobook(project: Project, book: Book) -> Path | None:
     """One M4B with chapter markers from every chapter mastered so far."""
-    masters = sorted(project.render_dir.glob("ch*.master.wav"))
-    if not masters:
-        return None
+    current = {c.index: c for c in book.chapters}
     chapters = []
-    for path in masters:
+    for path in sorted(project.render_dir.glob("ch*.master.wav")):
         index = int(re.match(r"ch(\d+)", path.name).group(1))  # type: ignore[union-attr]
-        chapters.append((path, chapter_title(book, index)))
+        meta = path.with_suffix(".json")
+        source = json.loads(meta.read_text(encoding="utf-8")).get("source") if meta.exists() else None
+        if index in current and source == current[index].fingerprint():
+            chapters.append((path, chapter_title(book, index)))  # skip masters of text that has since changed
+    if not chapters:
+        return None
     cover = project.render_dir / "cover.png"
     if not cover.exists() and book.source:
         extract_cover(Path(book.source), cover)

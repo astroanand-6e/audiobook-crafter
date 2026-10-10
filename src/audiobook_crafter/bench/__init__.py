@@ -143,7 +143,11 @@ def compare_llms(
 
 def tts_report(project: Project, chapter: int) -> dict[str, float | int | str]:
     """Clip-level numbers for a synthesized chapter: QA failures, length, real-time factor."""
-    clips = [c for c in load_manifest(project, chapter) if c.path]
+    try:
+        clips, scope = load_manifest(project, chapter), "chapter"
+    except FileNotFoundError:
+        clips, scope = load_manifest(project, chapter, preview=True), "preview"
+    clips = [c for c in clips if c.path]
     seconds = sum(c.seconds for c in clips)
     generation = []
     for clip in clips:
@@ -153,6 +157,7 @@ def tts_report(project: Project, chapter: int) -> dict[str, float | int | str]:
             if "gen_seconds" in info:
                 generation.append(float(info["gen_seconds"]))
     report: dict[str, float | int | str] = {
+        "scope": scope,
         "clips": len(clips),
         "audio_minutes": round(seconds / 60, 2),
         "qa_failures": sum(1 for c in clips if c.issue),

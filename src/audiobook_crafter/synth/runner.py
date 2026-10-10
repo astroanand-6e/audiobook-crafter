@@ -66,12 +66,12 @@ def spoken_text(segment: Segment, language: str) -> str:
     return normalize_for_tts(segment.text, language)
 
 
-def manifest_path(project: Project, chapter: int) -> Path:
-    return project.render_dir / f"ch{chapter:03d}.clips.json"
+def manifest_path(project: Project, chapter: int, preview: bool = False) -> Path:
+    return project.render_dir / f"ch{chapter:03d}.{'preview.' if preview else ''}clips.json"
 
 
-def load_manifest(project: Project, chapter: int) -> list[Clip]:
-    path = manifest_path(project, chapter)
+def load_manifest(project: Project, chapter: int, preview: bool = False) -> list[Clip]:
+    path = manifest_path(project, chapter, preview)
     if not path.exists():
         raise FileNotFoundError(
             f"No clips for chapter {chapter}; run `abcraft synth --chapter {chapter}` first"
@@ -80,20 +80,22 @@ def load_manifest(project: Project, chapter: int) -> list[Clip]:
 
 
 def _render(
-    engine: TTSEngine, line: Line, voice: Voice, checker: ClipChecker, retries: int
-) -> tuple[np.ndarray, int, str]:
-    best: tuple[np.ndarray, int, str, float] | None = None
-    for attempt in range(retries + 1):
-        audio, sr = engine.synthesize(line, voice, voice.seed + 7919 * attempt)
+    engine: TTSEngine, line: Line, voice: Voice, checker: ClipChecker, retries: int, first_take: int = 0
+) -> tuple[np.ndarray, int, str, float | None, int]:
+    """Best of up to `retries + 1` takes: (audio, sample rate, remaining issue, WER, takes used)."""
+    best: tuple[np.ndarray, int, str, float, float | None] | None = None
+    take = first_take
+    for take in range(first_take, first_take + retries + 1):
+        audio, sr = engine.synthesize(line, voice, voice.seed + 7919 * take)
         audio = clean_clip(audio, sr)
         verdict = checker.check(line.text, audio, sr)
         if best is None or verdict.score < best[3]:
-            best = (audio, sr, verdict.issue, verdict.score)
+            best = (audio, sr, verdict.issue, verdict.score, verdict.wer)
         if not verdict.issue:
             break
         log.info("Retaking %r (%s)", line.text[:50], verdict.issue)
     assert best is not None
-    return best[0], best[1], best[2]
+    return best[0], best[1], best[2], best[4], take + 1
 
 
 def synthesize_chapter(
@@ -131,6 +133,9 @@ def synthesize_chapter(
             )
             continue
         voice_id, profile = cast.resolve(segment.speaker)
+        if segment.speaker not in cast.voices and segment.speaker not in warned:
+            log.warning("No voice for '%s' in cast.yaml; the narrator reads its lines", segment.speaker)
+            warned.add(segment.speaker)
         engine_name = profile.engine or config.tts.engine
         engine = pool.get(engine_name)
         if not engine.supports(language) and engine_name not in warned:
@@ -154,12 +159,21 @@ def synthesize_chapter(
             key = clip_key(engine, line, voice, voice.seed)
             path = project.cache_dir / "tts" / key[:2] / f"{key}.wav"
             meta = path.with_suffix(".json")
-            if path.exists() and meta.exists():
-                info = json.loads(meta.read_text(encoding="utf-8"))
+            info = json.loads(meta.read_text(encoding="utf-8")) if path.exists() and meta.exists() else None
+            if info is not None and config.qa.asr and info.get("wer") is None and len(piece.split()) >= 3:
+                # Cached before ASR was switched on: check it now, and retake it if it fails.
+                cached, cached_sr = sf.read(str(path), dtype="float32")
+                verdict = checker.check(piece, cached, cached_sr)
+                info.update(wer=verdict.wer, issue=verdict.issue)
+                write_json(meta, info)
+            if info is not None and not (info.get("issue") and config.qa.retake_failed):
                 seconds, issue = float(info["seconds"]), str(info.get("issue", ""))
             else:
                 started = time.perf_counter()
-                audio, sr, issue = _render(engine, line, voice, checker, config.qa.retries)
+                first_take = int(info.get("takes", config.qa.retries + 1)) if info else 0
+                audio, sr, issue, wer, takes = _render(
+                    engine, line, voice, checker, config.qa.retries, first_take
+                )
                 path.parent.mkdir(parents=True, exist_ok=True)
                 sf.write(str(path), audio, sr, subtype="PCM_16")
                 seconds = len(audio) / sr
@@ -172,6 +186,8 @@ def synthesize_chapter(
                         "seconds": seconds,
                         "gen_seconds": round(time.perf_counter() - started, 3),
                         "issue": issue,
+                        "wer": wer,
+                        "takes": takes,
                     },
                 )
             clips.append(
@@ -192,5 +208,6 @@ def synthesize_chapter(
         if progress:
             progress(done, total, segment.text[:60])
     checker.close()
-    write_json(manifest_path(project, script.chapter), [c.model_dump() for c in clips])
+    # A preview's clip list is kept apart so it can never stand in for the full chapter.
+    write_json(manifest_path(project, script.chapter, preview=bool(limit)), [c.model_dump() for c in clips])
     return clips

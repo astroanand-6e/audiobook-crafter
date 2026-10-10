@@ -16,8 +16,9 @@ from .assemble import ChapterAudio, assemble_chapter, build_audiobook
 from .casting.cast import auto_cast
 from .casting.design import design_voices
 from .ingest import load_document
+from .ingest.common import title_from_headings
 from .llm import create_llm
-from .models import Book, ChapterScript
+from .models import RESERVED_SPEAKERS, Book, ChapterScript, Character
 from .project import Project
 from .synth.runner import Clip, synthesize_chapter
 from .tts import EnginePool, engine_available
@@ -52,22 +53,40 @@ class RunResult:
     issues: list[Clip] = field(default_factory=list)
 
 
-def ingest(project: Project, source: Path, pages: tuple[int, int] | None = None, force: bool = False) -> Book:
+def ingest(
+    project: Project,
+    source: Path,
+    pages: tuple[int, int] | None = None,
+    chapter: int | None = None,
+    force: bool = False,
+) -> Book:
+    """Load (or reuse) the book. `pages` + `chapter` set that chapter's PDF pages by hand, overriding
+    chapter detection for it alone; overrides are remembered in project.yaml."""
     config = project.config
     resolved = str(Path(source).resolve())
-    wanted_pages = list(pages) if pages else None
-    unchanged = config.source == resolved and config.pages == wanted_pages
-    if project.book_path.exists() and unchanged and not force:
-        return project.load_book()
-    book = load_document(source, pages)
-    if config.language:
-        book.language = config.language  # the user said so
+    if pages is not None:
+        if Path(source).suffix.lower() != ".pdf":
+            raise ValueError("--pages only applies to PDF input")
+        config.chapter_pages[chapter or 1] = list(pages)
+    if project.book_path.exists() and config.source == resolved and not force:
+        book = project.load_book()
     else:
-        config.language = book.language  # detected
-    config.title = config.title or book.title
-    config.author = config.author or book.author
-    config.source = resolved
-    config.pages = wanted_pages
+        book = load_document(source)
+        if config.language:
+            book.language = config.language  # the user said so
+        else:
+            config.language = book.language  # detected
+        config.title = config.title or book.title
+        config.author = config.author or book.author
+        config.source = resolved
+    for index, (first, last) in sorted(config.chapter_pages.items()):
+        manual = load_document(source, (first, last)).chapters[0]
+        headings = [b.text for b in manual.blocks[:2] if b.kind == "heading"]
+        manual.index = index
+        manual.title = title_from_headings(headings) or f"Pages {first}-{last}"
+        book.chapters = sorted(
+            [c for c in book.chapters if c.index != index] + [manual], key=lambda c: c.index
+        )
     project.save_config()
     project.save_book(book)
     return book
@@ -118,9 +137,17 @@ def analyze(
 
 
 def cast(project: Project) -> list[str]:
+    """Voice everyone who speaks in any script, including speakers added by hand-editing a script."""
     characters = project.load_characters()
+    counts = speaker_counts(project)
+    for speaker in counts:
+        if speaker not in RESERVED_SPEAKERS and characters.get(speaker) is None:
+            characters.add(Character(id=speaker, name=speaker.replace("_", " ").title()))
+    for character in characters.characters:
+        character.lines = counts.get(character.id, 0)
+    project.save_characters(characters)
     cast_ = project.load_cast()
-    changes = auto_cast(project, characters, cast_, speaker_counts(project))
+    changes = auto_cast(project, characters, cast_, counts)
     project.save_cast(cast_)
     return changes
 
@@ -187,7 +214,9 @@ def run(
 ) -> RunResult:
     reporter = reporter or QuietReporter()
     result = RunResult()
-    book = ingest(project, source, pages)
+    if pages is not None and len(chapters) != 1:
+        raise ValueError("--pages sets the pages of one chapter: pass exactly one --chapter")
+    book = ingest(project, source, pages, chapters[0] if chapters else None)
     result.scripts = analyze(project, book, chapters, reporter, reanalyze=reanalyze, scan_book=scan_book)
     result.cast_changes = cast(project)
     pool = EnginePool(project.config.tts)

@@ -54,6 +54,8 @@ class QAConfig(BaseModel):
     asr_device: str = "auto"
     max_wer: float = 0.2
     retries: int = 2
+    # Re-generate cached clips that still had a QA issue. Set per run with --retake; never saved.
+    retake_failed: bool = Field(default=False, exclude=True)
 
 
 class StyleConfig(BaseModel):
@@ -95,7 +97,8 @@ class ProjectConfig(BaseModel):
     author: str = ""
     language: str = ""  # ISO 639-1 code; empty = detect from the book
     source: str = ""
-    pages: list[int] | None = None  # PDF page range used as the only chapter (--pages)
+    # PDF chapters whose pages you set by hand (--pages FIRST-LAST --chapter N): {N: [FIRST, LAST]}
+    chapter_pages: dict[int, list[int]] = Field(default_factory=dict)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     tts: TTSConfig = Field(default_factory=TTSConfig)
     casting: CastingConfig = Field(default_factory=CastingConfig)

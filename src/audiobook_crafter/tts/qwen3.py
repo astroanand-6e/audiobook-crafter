@@ -71,16 +71,15 @@ class Qwen3Engine(TTSEngine):
         elif "VoiceDesign" in self._models:
             self._drop("VoiceDesign")
         device = resolve_device(self.device)
+        on_gpu = device.startswith("cuda")  # "cuda", "cuda:0", "cuda:1", ...
         attn = self.options.get("attn_implementation")
         if not attn:
-            attn = (
-                "flash_attention_2" if device == "cuda" and importlib.util.find_spec("flash_attn") else "sdpa"
-            )
+            attn = "flash_attention_2" if on_gpu and importlib.util.find_spec("flash_attn") else "sdpa"
         log.info("Loading %s on %s", self._repo(kind), device)
         self._models[kind] = Qwen3TTSModel.from_pretrained(
             self._repo(kind),
             device_map="cuda:0" if device == "cuda" else device,
-            dtype=torch.bfloat16 if device == "cuda" else torch.float32,
+            dtype=torch.bfloat16 if on_gpu else torch.float32,
             attn_implementation=attn,
         )
         return self._models[kind]

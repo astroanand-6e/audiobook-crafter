@@ -78,16 +78,29 @@ def auto_cast(
     def clip_profile(path) -> VoiceProfile:
         return VoiceProfile(reference=project.relative(path), reference_text=transcript_for(path))
 
-    if NARRATOR not in voices:
-        voices[NARRATOR] = (
-            clip_profile(clips[NARRATOR]) if NARRATOR in clips else VoiceProfile(design=config.narrator)
-        )
-        changes.append(f"{NARRATOR}: {'your clip' if NARRATOR in clips else 'designed narrator voice'}")
+    def adopt_clip(voice_id: str) -> bool:
+        """A clip you dropped at voices/<id>.wav replaces a voice that was chosen automatically."""
+        current = voices.get(voice_id)
+        clip = clips.get(voice_id)
+        if clip is None or (current and current.reference == project.relative(clip)):
+            return False
+        if current and not (current.design or (current.same_as or "").startswith("extra_")):
+            return False  # you set a preset, a clip or a link by hand: keep it
+        keep = {"engine": current.engine, "params": current.params, "seed": current.seed} if current else {}
+        voices[voice_id] = clip_profile(clip).model_copy(update=keep)
+        changes.append(f"{voice_id}: your clip {project.relative(clip)}")
+        return True
+
+    if not adopt_clip(NARRATOR) and NARRATOR not in voices:
+        voices[NARRATOR] = VoiceProfile(design=config.narrator)
+        changes.append(f"{NARRATOR}: designed narrator voice")
 
     taken = {p.reference for p in voices.values() if p.reference}
     pool = [(g, p) for g, p in pool_clips(project) if project.relative(p) not in taken]
 
     for character in sorted(characters.characters, key=lambda c: (-c.lines, c.id)):
+        if character.lines and adopt_clip(character.id):
+            continue
         current = voices.get(character.id)
         shares_extra = bool(current and current.same_as and current.same_as.startswith("extra_"))
         promote = shares_extra and character.lines >= config.min_lines_for_own_voice
@@ -96,9 +109,6 @@ def auto_cast(
         if characters.pov_character == character.id and config.pov_uses_narrator_voice:
             voices[character.id] = VoiceProfile(same_as=NARRATOR)
             changes.append(f"{character.id}: the narrator's voice (first-person narrator)")
-        elif character.id in clips:
-            voices[character.id] = clip_profile(clips[character.id])
-            changes.append(f"{character.id}: your clip {project.relative(clips[character.id])}")
         elif character.lines < config.min_lines_for_own_voice:
             extra = _extra_for(character.id, character.gender)
             voices[character.id] = VoiceProfile(same_as=extra)

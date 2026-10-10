@@ -194,11 +194,37 @@ def test_preview_is_kept_out_of_the_audiobook(tmp_path: Path, book_pdf: Path) ->
 
 
 @needs_ffmpeg
-def test_new_page_range_reanalyses_stale_script(tmp_path: Path, book_pdf: Path) -> None:
+def test_pages_override_one_chapter_and_stale_work_is_redone(tmp_path: Path, book_pdf: Path) -> None:
+    from audiobook_crafter.assemble import build_audiobook
+
     project = mock_project(tmp_path)
+    pipeline.run(project, book_pdf, [2], preview=3)
+    first = project.load_script(2)
+    full = pipeline.run(project, book_pdf, [2])
+    assert full.m4b is not None
+
+    # Detection "got chapter 2 wrong": point it at pages 3-4 (really chapter one's text).
+    book = pipeline.ingest(project, book_pdf, pages=(3, 4), chapter=2)
+    assert book.chapter(1).title == "Chapter One: The Letter"  # other chapters untouched
+    assert book.chapter(2).blocks[0].text == "CHAPTER ONE"
+    assert project.config.chapter_pages == {2: [3, 4]}
+    assert build_audiobook(project, book) is None  # the old chapter-2 master no longer matches its text
+
+    pipeline.run(project, book_pdf, [2], preview=3)
+    second = project.load_script(2)
+    assert first and second and first.source != second.source  # re-analysed, not reused
+    with pytest.raises(ValueError, match="exactly one"):
+        pipeline.run(project, book_pdf, [1, 2], pages=(3, 4))
+
+
+@needs_ffmpeg
+def test_preview_never_replaces_the_full_chapter(tmp_path: Path, book_pdf: Path) -> None:
+    from audiobook_crafter.assemble import assemble_chapter
+    from audiobook_crafter.synth.runner import load_manifest
+
+    project = mock_project(tmp_path)
+    full = pipeline.run(project, book_pdf, [1]).audio[0]
     pipeline.run(project, book_pdf, [1], preview=3)
-    first = project.load_script(1)
-    pipeline.run(project, book_pdf, [1], pages=(5, 6), preview=3)
-    second = project.load_script(1)
-    assert first and second and first.source != second.source
-    assert second.segments[0].text == "CHAPTER TWO"
+    assert len(load_manifest(project, 1)) > len(load_manifest(project, 1, preview=True))
+    again = assemble_chapter(project, project.load_book(), 1)
+    assert again.seconds == pytest.approx(full.seconds, abs=0.05)
