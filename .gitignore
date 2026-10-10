@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv*/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# Projects created by `abcraft` (books, audio, caches) stay local by default.
+audiobooks/
+*.wav
+*.mp3
+*.m4b
+*.m4a
+!tests/data/**
+
+# Secrets
+.env
