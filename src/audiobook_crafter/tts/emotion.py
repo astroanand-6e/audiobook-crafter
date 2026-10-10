@@ -55,8 +55,8 @@ def chatterbox_controls(
     return round(_clamp(exaggeration, 0.25, 1.2), 3), round(_clamp(cfg, 0.2, 1.0), 3)
 
 
-def instruction(emotion: str, intensity: float, direction: str = "", strength: float = 1.0) -> str:
-    """ "Speak angry, very intense: through clenched teeth." or "" for a plain read."""
+def style_phrase(emotion: str, intensity: float, direction: str = "", strength: float = 1.0) -> str:
+    """ "very angry, through clenched teeth" or "" for a plain read."""
     phrase = _PHRASES.get(emotion, "")
     level = intensity * strength
     parts = []
@@ -67,7 +67,13 @@ def instruction(emotion: str, intensity: float, direction: str = "", strength: f
         parts.append(f"{degree}{phrase}")
     if direction:
         parts.append(direction)
-    return ("Speak " + ", ".join(parts) + ".") if parts else ""
+    return ", ".join(parts)
+
+
+def instruction(emotion: str, intensity: float, direction: str = "", strength: float = 1.0) -> str:
+    """ "Speak very angry, through clenched teeth." or "" for a plain read."""
+    phrase = style_phrase(emotion, intensity, direction, strength)
+    return f"Speak {phrase}." if phrase else ""
 
 
 def turbo_prefix(tags: list[str]) -> str:

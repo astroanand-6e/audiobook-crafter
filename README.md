@@ -110,10 +110,12 @@ exact name/alias matches merge (so "Mr. Bennet" never swallows "Mrs. Bennet"). T
 | `chatterbox-multilingual` | clone any clip | `exaggeration` / `cfg_weight` per line | 23 incl. **Hindi** | MIT, Perth watermark kept |
 | `chatterbox` | clone | same | English | |
 | `chatterbox-turbo` | clone (≥5 s clip) | `[sigh] [laugh] [gasp] …` tags | English | fast drafts |
+| `voxcpm2` | clone; designs voices | a style prompt per line **on the cloned voice** ("(very angry, …)") | 30 incl. **Hindi** | Apache-2.0, 48 kHz, ~8 GB; `uv sync --extra voxcpm` (Python ≤ 3.12) |
 | `mock` | tones | — | any | dry runs, tests, no GPU |
 
-`uv run abcraft engines` shows what's installed. `docs/TTS_MODELS.md` surveys the October 2026 model landscape:
-IndexTTS-2 and VoxCPM2 are the next engines worth adding, because they combine emotion control with cloned voices.
+`uv run abcraft engines` shows what's installed. `docs/TTS_MODELS.md` surveys the October 2026 model landscape.
+VoxCPM2 is wired in because it adds what Qwen3 cloning lacks: per-line emotion on a consistent cloned voice.
+IndexTTS-2 is next for the same reason.
 
 **Running two engines together.** qwen-tts and chatterbox-tts pin incompatible `transformers` versions, so give
 the second one its own environment and the pipeline will drive it as a worker process:
@@ -190,7 +192,7 @@ audiobooks/my_book/
 - Sound design: per-scene ambience beds and spot effects with ducking. The cue schema is sketched in
   `docs/ARCHITECTURE.md`. Effects would come from a tagged local library first, then a generative SFX model.
 - A director pass: scene-level pacing and emotion arcs, and paralinguistic cues where the text earns them.
-- More engines: IndexTTS-2 (emotion vectors on cloned voices), VoxCPM2 (style prompts on cloned voices, Hindi).
+- More engines: IndexTTS-2 (emotion vectors on cloned voices). Batched generation for speed.
 - Podcast mode: two hosts discussing a document, using the existing script → cast → render path.
 - Listening QA with an audio-capable LLM (Gemma 4 12B locally, Gemini via BYOK) for emotion and pronunciation.
 

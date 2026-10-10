@@ -227,3 +227,48 @@ def test_worker_engine_round_trip() -> None:
     finally:
         engine.unload()
     assert engine.proc is None
+
+
+# ---------------------------------------------------------------- voxcpm
+
+
+class FakeVoxCPM:
+    made: list[FakeVoxCPM] = []
+
+    def __init__(self, kwargs: dict[str, Any]):
+        self.kwargs, self.calls = kwargs, []
+        self.tts_model = types.SimpleNamespace(sample_rate=48000)
+        FakeVoxCPM.made.append(self)
+
+    @classmethod
+    def from_pretrained(cls, hf_model_id="openbmb/VoxCPM2", load_denoiser=True, zipenhancer_model_id="x",
+                        cache_dir=None, local_files_only=False, optimize=True, device=None, lora_config=None,
+                        lora_weights_path=None, **kwargs):  # fmt: skip
+        return cls({"id": hf_model_id, "denoiser": load_denoiser, "optimize": optimize, "device": device})
+
+    def generate(self, text, prompt_wav_path=None, prompt_text=None, reference_wav_path=None, cfg_value=2.0,
+                 inference_timesteps=10, min_len=2, max_len=4096, normalize=False, denoise=False,
+                 retry_badcase=True, retry_badcase_max_times=3, retry_badcase_ratio_threshold=6.0):  # fmt: skip
+        self.calls.append((text, reference_wav_path, prompt_wav_path, prompt_text, cfg_value))
+        return np.zeros(4800, dtype=np.float32)
+
+
+def test_voxcpm_style_prefix_on_cloned_voice(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    FakeVoxCPM.made = []
+    monkeypatch.setitem(sys.modules, "torch", fake_torch())
+    monkeypatch.setitem(sys.modules, "voxcpm", _module("voxcpm", VoxCPM=FakeVoxCPM))
+    engine = create_local_engine("voxcpm2", {}, "cpu")
+    engine.load()
+    model = FakeVoxCPM.made[0]
+    assert model.kwargs["id"] == "openbmb/VoxCPM2" and model.kwargs["denoiser"] is False
+    voice = Voice(id="ravi", reference=tmp_path / "ravi.wav", reference_text="Namaste.", fingerprint="r")
+    audio, sr = engine.synthesize(
+        Line(text="Get out!", language="hi", emotion="angry", intensity=0.9), voice, 1
+    )
+    assert sr == 48000 and audio.dtype == np.float32
+    assert model.calls[-1] == ("(extremely angry)Get out!", str(tmp_path / "ravi.wav"), None, None, 2.0)
+    engine.synthesize(Line(text="Calm words."), voice, 1)
+    assert model.calls[-1][0] == "Calm words."  # neutral: no prefix
+    engine.design("A warm elderly woman.", "Hello there.", "en", 2)
+    assert model.calls[-1][:2] == ("(A warm elderly woman.)Hello there.", None)
+    assert engine.supports("hi")

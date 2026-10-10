@@ -31,6 +31,12 @@ chatterbox = [
     "torch>=2.7.1",
     "torchaudio>=2.7.1",
 ]
+# Alternative engine: VoxCPM2 (style prompts on cloned voices, 30 languages incl. Hindi).
+voxcpm = [
+    "voxcpm>=2.0.3; python_version < '3.13'",
+    "torch>=2.7.1",
+    "torchaudio>=2.7.1",
+]
 # Bring-your-own-key Claude as the LLM brain (other providers need no extra packages).
 anthropic = ["anthropic>=1.13"]
 # ASR-based quality check of every generated clip.

@@ -41,6 +41,13 @@ ENGINES: dict[str, EngineInfo] = {
         "audiobook_crafter.tts.chatterbox", "ChatterboxEngine", "chatterbox", {"variant": "turbo"},
         "Chatterbox Turbo (English): fast, [laugh] [sigh] [gasp] ... tags",
     ),
+    "voxcpm2": EngineInfo(
+        "audiobook_crafter.tts.voxcpm",
+        "VoxCPMEngine",
+        "voxcpm",
+        {},
+        "VoxCPM2: cloning with per-line style prompts, voice design, 30 languages incl. Hindi, 48 kHz",
+    ),
     "mock": EngineInfo(
         "audiobook_crafter.tts.mock", "MockEngine", "numpy", {},
         "Stand-in tones for dry runs and tests (no model, no GPU)",

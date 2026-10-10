@@ -38,7 +38,7 @@ Model releases move fast, so re-check licences and versions before you depend on
 | model | why | caveats |
 |---|---|---|
 | **IndexTTS-2** (bilibili; 2.5 released Aug 2026) | Speaker and emotion are disentangled. Freeze one clip per character and set each line's emotion with an 8-value vector or a text description. Duration control. Runs on cu128. | Custom licence: royalty-free, with limits above 100M MAU or RMB 1B revenue. No Hindi. Installed from git. |
-| **VoxCPM2** (OpenBMB, Apache-2.0, Apr 2026, 2B) | Style prompts such as `(tense whisper)` that work **on a cloned voice**, plus voice design and 30 languages **including Hindi**. 48 kHz output. ~8 GB. | Output varies between runs, so plan for 1–3 takes (our QA loop fits). Glitches on very short phrases. |
+| **VoxCPM2** (OpenBMB, Apache-2.0, Apr 2026, 2B). *Adapter included: `--engine voxcpm2`.* | Style prompts such as `(tense whisper)` that work **on a cloned voice**, plus voice design and 30 languages **including Hindi**. 48 kHz output. ~8 GB. RTF ~0.3 on a 4090. | Output varies between runs, so plan for 1–3 takes (our QA loop fits). Glitches on very short phrases. Its own Hindi WER table is weak (~20%), so A/B test it against Chatterbox for Hindi. |
 | MOSS-TTS family (Apache-2.0) | v1.5 has 31 languages including Hindi, a voice generator, a dialogue model (MOSS-TTSD), and **MOSS-SoundEffect** for the SFX stage. | Pins torch 2.9.1. |
 
 ## Others, briefly
