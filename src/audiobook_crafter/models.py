@@ -8,6 +8,8 @@ Cast -> VoiceProfile            which voice performs each character, for the who
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import unicodedata
 from collections import Counter
@@ -101,6 +103,11 @@ class Chapter(BaseModel):
     @property
     def word_count(self) -> int:
         return sum(len(b.text.split()) for b in self.blocks if b.kind == "paragraph")
+
+    def fingerprint(self) -> str:
+        """Changes whenever the chapter's text or structure changes (e.g. re-ingested with --pages)."""
+        payload = json.dumps([self.title, [b.model_dump() for b in self.blocks]], ensure_ascii=False)
+        return hashlib.sha1(payload.encode()).hexdigest()[:16]
 
     def preview(self, words: int = 14) -> str:
         for block in self.blocks:
@@ -235,6 +242,7 @@ class Segment(BaseModel):
 class ChapterScript(BaseModel):
     chapter: int
     title: str
+    source: str = ""  # Chapter.fingerprint() of the text this script was made from
     segments: list[Segment] = Field(default_factory=list)
 
     def speaker_counts(self) -> Counter[str]:

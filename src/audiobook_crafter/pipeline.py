@@ -53,17 +53,21 @@ class RunResult:
 
 
 def ingest(project: Project, source: Path, pages: tuple[int, int] | None = None, force: bool = False) -> Book:
-    if project.book_path.exists() and not force:
+    config = project.config
+    resolved = str(Path(source).resolve())
+    wanted_pages = list(pages) if pages else None
+    unchanged = config.source == resolved and config.pages == wanted_pages
+    if project.book_path.exists() and unchanged and not force:
         return project.load_book()
     book = load_document(source, pages)
-    config = project.config
     if config.language:
         book.language = config.language  # the user said so
     else:
         config.language = book.language  # detected
     config.title = config.title or book.title
     config.author = config.author or book.author
-    config.source = str(Path(source).resolve())
+    config.source = resolved
+    config.pages = wanted_pages
     project.save_config()
     project.save_book(book)
     return book
@@ -78,8 +82,12 @@ def analyze(
     reanalyze: bool = False,
     scan_book: bool = False,
 ) -> list[ChapterScript]:
-    todo = [i for i in chapters if reanalyze or project.load_script(i) is None]
-    scripts = {i: project.load_script(i) for i in chapters if i not in todo}
+    def current(index: int) -> ChapterScript | None:
+        script = project.load_script(index)
+        return script if script and script.source == book.chapter(index).fingerprint() else None
+
+    scripts = {i: None if reanalyze else current(i) for i in chapters}
+    todo = [i for i, script in scripts.items() if script is None]
     if todo:
         llm = create_llm(project.config.llm)
         if llm is None:
@@ -188,9 +196,9 @@ def run(
         clips = synthesize(project, result.scripts, reporter, pool, preview)
     finally:
         pool.close()
-    reporter.stage("Master", "pacing, levels, loudness, MP3 + M4B")
+    reporter.stage("Master", "pacing, levels, loudness, " + ("preview MP3" if preview else "MP3 + M4B"))
     for index in chapters:
-        result.audio.append(assemble_chapter(project, book, index))
+        result.audio.append(assemble_chapter(project, book, index, preview=bool(preview)))
         result.issues += [c for c in clips.get(index, []) if c.issue]
-    result.m4b = build_audiobook(project, book)
+    result.m4b = None if preview else build_audiobook(project, book)
     return result

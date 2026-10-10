@@ -95,6 +95,7 @@ class ProjectConfig(BaseModel):
     author: str = ""
     language: str = ""  # ISO 639-1 code; empty = detect from the book
     source: str = ""
+    pages: list[int] | None = None  # PDF page range used as the only chapter (--pages)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     tts: TTSConfig = Field(default_factory=TTSConfig)
     casting: CastingConfig = Field(default_factory=CastingConfig)

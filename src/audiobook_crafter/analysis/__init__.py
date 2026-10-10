@@ -43,7 +43,9 @@ def scan_characters(
 
 
 def drop_speech_tags(segments: list[Segment]) -> list[Segment]:
-    """Drama mode: "she said." between lines is redundant once every character has their own voice."""
+    """Drama mode: "she said." between lines is redundant once every character has their own voice.
+
+    Applied when speaking, not when analysing, so switching modes never needs the LLM again."""
     kept: list[Segment] = []
     for i, segment in enumerate(segments):
         neighbours = [segments[j] for j in (i - 1, i + 1) if 0 <= j < len(segments)]
@@ -135,10 +137,9 @@ def analyze_chapter(
             segment.emotion = emotion
             segment.intensity = min(0.5, 0.6 * intensity)  # the narrator colours a scene, never acts it out
 
-    segments = segmented.segments
-    if config.style.mode == "drama":
-        segments = drop_speech_tags(segments)
-    script = ChapterScript(chapter=index, title=chapter.title, segments=segments)
+    script = ChapterScript(
+        chapter=index, title=chapter.title, source=chapter.fingerprint(), segments=segmented.segments
+    )
     project.save_script(script)
     recount_lines(project, characters)
     project.save_characters(characters)

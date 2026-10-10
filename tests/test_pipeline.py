@@ -183,3 +183,22 @@ def test_qa_checks() -> None:
     assert "too long" in checker.check(text, np.ones(24000 * 20, dtype=np.float32), 24000).issue
     assert "too short" in checker.check(text, np.ones(6000, dtype=np.float32), 24000).issue
     assert word_error_rate("the cat sat on the mat", "the cat sat on a mat") == pytest.approx(1 / 6)
+
+
+@needs_ffmpeg
+def test_preview_is_kept_out_of_the_audiobook(tmp_path: Path, book_pdf: Path) -> None:
+    project = mock_project(tmp_path)
+    result = pipeline.run(project, book_pdf, [1], preview=4)
+    assert result.m4b is None and "(preview)" in result.audio[0].mp3.name
+    assert not list(project.render_dir.glob("*.master.wav"))
+
+
+@needs_ffmpeg
+def test_new_page_range_reanalyses_stale_script(tmp_path: Path, book_pdf: Path) -> None:
+    project = mock_project(tmp_path)
+    pipeline.run(project, book_pdf, [1], preview=3)
+    first = project.load_script(1)
+    pipeline.run(project, book_pdf, [1], pages=(5, 6), preview=3)
+    second = project.load_script(1)
+    assert first and second and first.source != second.source
+    assert second.segments[0].text == "CHAPTER TWO"

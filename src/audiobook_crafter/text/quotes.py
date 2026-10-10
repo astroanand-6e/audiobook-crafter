@@ -124,7 +124,8 @@ _SPEECH_VERBS = (
     "exclaimed|added|continued|began|repeated|insisted|demanded|snapped|snarled|growled|hissed|sighed|laughed|"
     "sobbed|gasped|breathed|told|warned|agreed|admitted|announced|declared|protested|pleaded|begged|suggested|"
     "observed|remarked|retorted|responded|interrupted|stammered|stuttered|groaned|moaned|screamed|roared|"
-    "bellowed|chuckled|giggled|teased|explained|offered|went on|whimpered|wailed|grumbled|mumbled|purred"
+    "bellowed|chuckled|giggled|teased|explained|offered|went on|whimpered|wailed|grumbled|mumbled|purred|"
+    "returned|rejoined|resumed|persisted|urged|inquired|enquired|ventured|concluded|corrected|conceded"
 )
 SPEECH_VERB_ALTERNATION = _SPEECH_VERBS
 SPEECH_VERBS = re.compile(rf"\b(?:{_SPEECH_VERBS})\b", re.IGNORECASE)

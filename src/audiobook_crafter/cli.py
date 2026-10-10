@@ -17,7 +17,7 @@ from rich.logging import RichHandler
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from . import pipeline
+from . import bench, pipeline
 from .assemble import assemble_chapter, build_audiobook
 from .audio.dsp import clean_clip
 from .casting.design import design_voices
@@ -33,6 +33,8 @@ app = typer.Typer(
 )
 voices_app = typer.Typer(no_args_is_help=True, help="Design, list and audition voices.")
 app.add_typer(voices_app, name="voices")
+bench_app = typer.Typer(no_args_is_help=True, help="Score LLM casting and TTS runs (testbench).")
+app.add_typer(bench_app, name="bench")
 console = Console()
 
 
@@ -248,6 +250,10 @@ def run(
         )
     if result.m4b:
         console.print(f"[bold green]✓[/] Audiobook so far: {result.m4b}")
+    if preview:
+        console.print(
+            "This was a preview; run again without --preview for the full chapter (clips are reused)."
+        )
     if result.issues:
         console.print(f"[yellow]⚠ {len(result.issues)} clips still failed QA after retries:")
         for clip in result.issues[:10]:
@@ -496,6 +502,55 @@ def doctor(project_dir: ProjectOpt = None) -> None:
     else:
         console.print(f"• LLM: {spec}")
     raise typer.Exit(0 if ok else 1)
+
+
+def _print_reports(reports: list[bench.AttributionReport]) -> None:
+    table = Table(title="Speaker attribution")
+    for column in ("run", "accuracy", "quotes found", "worst confusions"):
+        table.add_column(column, overflow="fold")
+    for report in sorted(reports, key=lambda r: -r.accuracy):
+        confusions = ", ".join(f"{g}→{p} ×{n}" for (g, p), n in report.confusions.most_common(3))
+        table.add_row(
+            report.label, f"{report.accuracy:.1%}", f"{report.matched}/{report.total}", confusions or "-"
+        )
+    console.print(table)
+
+
+@bench_app.command("attribution")
+def bench_attribution(
+    gold: Annotated[Path, typer.Option(exists=True, dir_okay=False, help="JSONL: chapter, text, speaker")],
+    project_dir: ProjectOpt = None,
+) -> None:
+    """Score this project's scripts against hand-labelled quotes."""
+    project = open_project(project_dir)
+    quotes = bench.load_gold(gold)
+    scripts = {i: s for i in sorted({q.chapter for q in quotes}) if (s := project.load_script(i))}
+    _print_reports(
+        [bench.score_attribution(scripts, project.load_characters(), quotes, label="this project")]
+    )
+
+
+@bench_app.command("llms")
+def bench_llms(
+    gold: Annotated[Path, typer.Option(exists=True, dir_okay=False, help="JSONL: chapter, text, speaker")],
+    llm: Annotated[list[str], typer.Option("--llm", help="provider:model; repeat to compare")],
+    project_dir: ProjectOpt = None,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Run the same chapters through several LLMs and rank them on attribution accuracy."""
+    setup_logging(verbose)
+    project = open_project(project_dir)
+    quotes = bench.load_gold(gold)
+    chapters_ = sorted({q.chapter for q in quotes})
+    _print_reports(bench.compare_llms(project, project.load_book(), chapters_, quotes, llm))
+
+
+@bench_app.command("tts")
+def bench_tts(chapter: ChapterOpt, project_dir: ProjectOpt = None) -> None:
+    """Clip count, QA failures and real-time factor of synthesized chapters."""
+    project = open_project(project_dir)
+    for index in parse_chapters(chapter):
+        console.print(f"Chapter {index}: {bench.tts_report(project, index)}")
 
 
 def main() -> None:

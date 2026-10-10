@@ -28,6 +28,7 @@ _CALM = {"neutral", "calm", "serious", "tender", "happy", "amused"}
 
 
 def _fit(sentences: list[str], low: int = 140, high: int = 260) -> str:
+    """Whole sentences adding up to roughly 10-15 seconds of speech."""
     text = ""
     for sentence in sentences:
         candidate = f"{text} {sentence}".strip()
@@ -36,7 +37,10 @@ def _fit(sentences: list[str], low: int = 140, high: int = 260) -> str:
         text = candidate
         if len(text) >= high:
             break
-    return text[: high + 80]
+    limit = high + 80
+    if len(text) > limit:  # one very long sentence: end it at a word boundary
+        text = text[:limit].rsplit(" ", 1)[0].rstrip(",;:—–- ") + "."
+    return text
 
 
 def _scripts(project: Project) -> list[ChapterScript]:

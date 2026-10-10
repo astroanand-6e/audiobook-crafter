@@ -160,7 +160,8 @@ def test_llm_failure_falls_back_to_rules(tmp_path: Path) -> None:
 def test_drama_mode_drops_speech_tags(tmp_path: Path) -> None:
     project, book = make_project(tmp_path, mode="drama")
     script = analyze_chapter(project, book, 1, FakeLLM(green_seal_handler))
-    texts = [s.text for s in script.segments]
-    assert "Clara asked." not in texts
-    assert any(t.startswith("said Mr. Hartwell. He turned") for t in texts)  # not a bare tag: kept
+    assert "Clara asked." in [s.text for s in script.segments]  # the script keeps every word
+    spoken = [s.text for s in drop_speech_tags(script.segments)]  # drama mode drops bare tags when speaking
+    assert "Clara asked." not in spoken
+    assert any(t.startswith("said Mr. Hartwell. He turned") for t in spoken)  # not a bare tag: kept
     assert drop_speech_tags([]) == []

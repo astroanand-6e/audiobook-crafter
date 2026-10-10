@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
@@ -17,6 +18,7 @@ import numpy as np
 import soundfile as sf
 from pydantic import BaseModel
 
+from ..analysis import drop_speech_tags
 from ..audio.dsp import clean_clip
 from ..casting.voices import resolve_voice
 from ..models import Cast, ChapterScript, Segment
@@ -107,6 +109,8 @@ def synthesize_chapter(
     language = project.language
     checker = ClipChecker(config.qa, language, config.tts.device)
     segments = script.segments[:limit] if limit else script.segments
+    if config.style.mode == "drama":
+        segments = drop_speech_tags(segments)
 
     plan: list[tuple[Segment, str]] = []
     for segment in segments:
@@ -154,6 +158,7 @@ def synthesize_chapter(
                 info = json.loads(meta.read_text(encoding="utf-8"))
                 seconds, issue = float(info["seconds"]), str(info.get("issue", ""))
             else:
+                started = time.perf_counter()
                 audio, sr, issue = _render(engine, line, voice, checker, config.qa.retries)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 sf.write(str(path), audio, sr, subtype="PCM_16")
@@ -165,6 +170,7 @@ def synthesize_chapter(
                         "voice": voice_id,
                         "engine": engine_name,
                         "seconds": seconds,
+                        "gen_seconds": round(time.perf_counter() - started, 3),
                         "issue": issue,
                     },
                 )

@@ -7,6 +7,7 @@ get the line's emotion as an instruction."""
 
 from __future__ import annotations
 
+import gc
 import importlib.util
 import logging
 from importlib import metadata
@@ -140,6 +141,7 @@ class Qwen3Engine(TTSEngine):
         self._models.pop(kind, None)
         if kind == "Base":
             self._prompts.clear()
+        gc.collect()
         try:
             import torch
 

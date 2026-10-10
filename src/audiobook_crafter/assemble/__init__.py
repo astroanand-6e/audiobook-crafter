@@ -140,14 +140,17 @@ def chapter_title(book: Book, index: int) -> str:
     return book.chapter(index).title or f"Chapter {index}"
 
 
-def assemble_chapter(project: Project, book: Book, index: int) -> ChapterAudio:
+def assemble_chapter(project: Project, book: Book, index: int, preview: bool = False) -> ChapterAudio:
+    """Master one chapter. A preview gets its own file names so it never ends up in the M4B."""
     clips = load_manifest(project, index)
+    kind = "preview" if preview else "master"
     voice = project.render_dir / f"ch{index:03d}.voice.wav"
     seconds = render_voice_track(project, clips, voice)
-    master = ffmpeg.master(voice, project.render_dir / f"ch{index:03d}.master.wav", project.config.mastering)
+    master = ffmpeg.master(voice, project.render_dir / f"ch{index:03d}.{kind}.wav", project.config.mastering)
     title = chapter_title(book, index)
     project.output_dir.mkdir(parents=True, exist_ok=True)
-    mp3 = project.output_dir / f"{_safe(book.title)} - {index:02d} - {_safe(title)}.mp3"
+    suffix = " (preview)" if preview else ""
+    mp3 = project.output_dir / f"{_safe(book.title)} - {index:02d} - {_safe(title)}{suffix}.mp3"
     tags = {"title": title, "album": book.title, "artist": book.author, "album_artist": book.author,
             "track": str(index), "genre": "Audiobook"}  # fmt: skip
     ffmpeg.encode_mp3(master, mp3, project.config.mastering, tags)
