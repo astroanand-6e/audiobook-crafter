@@ -1,5 +1,5 @@
 """Prompts and JSON schemas for the LLM brain. Every field is required and objects are closed
-(additionalProperties: false) so the same schema works for Ollama, OpenAI-style strict mode and Claude."""
+(additionalProperties: false) so the same schema works for Ollama, OpenAI-style strict mode and Anthropic."""
 
 from __future__ import annotations
 

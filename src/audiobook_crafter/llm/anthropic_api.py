@@ -1,4 +1,4 @@
-"""Claude through the official Anthropic SDK: pip install 'audiobook-crafter[anthropic]'."""
+"""Anthropic models through the official Anthropic SDK: pip install 'audiobook-crafter[anthropic]'."""
 
 from __future__ import annotations
 
@@ -71,9 +71,9 @@ class AnthropicLLM(LLM):
         if response.stop_reason == "refusal":
             details = getattr(response, "stop_details", None)
             category = getattr(details, "category", None) or "unspecified"
-            raise LLMError(f"Claude declined this passage (category: {category}).")
+            raise LLMError(f"The model declined this passage (category: {category}).")
         if response.stop_reason == "max_tokens":
-            log.warning("Claude hit max_tokens; the JSON may be cut short")
+            log.warning("The model hit max_tokens; the JSON may be cut short")
         return "".join(block.text for block in response.content if block.type == "text")
 
     def release(self) -> None:
